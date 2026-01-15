@@ -119,9 +119,11 @@ type APIKey struct {
 	Notes        string     `gorm:"type:varchar(255);default:''" json:"notes"`
 	RequestCount int64      `gorm:"not null;default:0" json:"request_count"`
 	FailureCount int64      `gorm:"not null;default:0" json:"failure_count"`
-	LastUsedAt   *time.Time `json:"last_used_at"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
+	LastUsedAt             *time.Time `json:"last_used_at"`
+	LastValidationStatus   *int       `json:"last_validation_status"`
+	LastValidationResponse string     `gorm:"type:text" json:"last_validation_response"`
+	CreatedAt              time.Time  `json:"created_at"`
+	UpdatedAt              time.Time  `json:"updated_at"`
 }
 
 // RequestType 请求类型常量

@@ -233,7 +233,8 @@ func (ps *ProxyServer) executeRequestWithRetry(
 		}
 
 		// 使用解析后的错误信息更新密钥状态
-		ps.keyProvider.UpdateStatus(apiKey, group, false, parsedError)
+		ps.keyProvider.UpdateStatus(apiKey, group, false, parsedError, 0, "")
+
 
 		// 判断是否为最后一次尝试
 		isLastAttempt := retryCount >= cfg.MaxRetries

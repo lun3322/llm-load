@@ -63,13 +63,13 @@ func (s *KeyValidator) ValidateSingleKey(key *models.APIKey, group *models.Group
 		return false, fmt.Errorf("failed to get channel for group %s: %w", group.Name, err)
 	}
 
-	isValid, validationErr := ch.ValidateKey(ctx, key, group)
+	isValid, statusCode, responseBody, validationErr := ch.ValidateKey(ctx, key, group)
 
 	var errorMsg string
 	if !isValid && validationErr != nil {
 		errorMsg = validationErr.Error()
 	}
-	s.keypoolProvider.UpdateStatus(key, group, isValid, errorMsg)
+	s.keypoolProvider.UpdateStatus(key, group, isValid, errorMsg, statusCode, responseBody)
 
 	if !isValid {
 		logrus.WithFields(logrus.Fields{
@@ -87,6 +87,7 @@ func (s *KeyValidator) ValidateSingleKey(key *models.APIKey, group *models.Group
 
 	return true, nil
 }
+
 
 // TestMultipleKeys performs a synchronous validation for a list of key values within a specific group.
 func (s *KeyValidator) TestMultipleKeys(group *models.Group, keyValues []string) ([]KeyTestResult, error) {

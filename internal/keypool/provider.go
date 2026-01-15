@@ -88,13 +88,13 @@ func (p *KeyProvider) SelectKey(groupID uint) (*models.APIKey, error) {
 }
 
 // UpdateStatus 异步地提交一个 Key 状态更新任务。
-func (p *KeyProvider) UpdateStatus(apiKey *models.APIKey, group *models.Group, isSuccess bool, errorMessage string) {
+func (p *KeyProvider) UpdateStatus(apiKey *models.APIKey, group *models.Group, isSuccess bool, errorMessage string, statusCode int, responseBody string) {
 	go func() {
 		keyHashKey := fmt.Sprintf("key:%d", apiKey.ID)
 		activeKeysListKey := fmt.Sprintf("group:%d:active_keys", group.ID)
 
 		if isSuccess {
-			if err := p.handleSuccess(apiKey.ID, keyHashKey, activeKeysListKey); err != nil {
+			if err := p.handleSuccess(apiKey.ID, keyHashKey, activeKeysListKey, statusCode, responseBody); err != nil {
 				logrus.WithFields(logrus.Fields{"keyID": apiKey.ID, "error": err}).Error("Failed to handle key success")
 			}
 		} else {
@@ -104,13 +104,14 @@ func (p *KeyProvider) UpdateStatus(apiKey *models.APIKey, group *models.Group, i
 					"error": errorMessage,
 				}).Debug("Uncounted error, skipping failure handling")
 			} else {
-				if err := p.handleFailure(apiKey, group, keyHashKey, activeKeysListKey); err != nil {
+				if err := p.handleFailure(apiKey, group, keyHashKey, activeKeysListKey, statusCode, responseBody); err != nil {
 					logrus.WithFields(logrus.Fields{"keyID": apiKey.ID, "error": err}).Error("Failed to handle key failure")
 				}
 			}
 		}
 	}()
 }
+
 
 // executeTransactionWithRetry wraps a database transaction with a retry mechanism.
 func (p *KeyProvider) executeTransactionWithRetry(operation func(tx *gorm.DB) error) error {
@@ -139,7 +140,7 @@ func (p *KeyProvider) executeTransactionWithRetry(operation func(tx *gorm.DB) er
 	return err
 }
 
-func (p *KeyProvider) handleSuccess(keyID uint, keyHashKey, activeKeysListKey string) error {
+func (p *KeyProvider) handleSuccess(keyID uint, keyHashKey, activeKeysListKey string, statusCode int, responseBody string) error {
 	keyDetails, err := p.store.HGetAll(keyHashKey)
 	if err != nil {
 		return fmt.Errorf("failed to get key details from store: %w", err)
@@ -148,7 +149,7 @@ func (p *KeyProvider) handleSuccess(keyID uint, keyHashKey, activeKeysListKey st
 	failureCount, _ := strconv.ParseInt(keyDetails["failure_count"], 10, 64)
 	isActive := keyDetails["status"] == models.KeyStatusActive
 
-	if failureCount == 0 && isActive {
+	if failureCount == 0 && isActive && statusCode == 0 {
 		return nil
 	}
 
@@ -161,6 +162,11 @@ func (p *KeyProvider) handleSuccess(keyID uint, keyHashKey, activeKeysListKey st
 		updates := map[string]any{"failure_count": 0}
 		if !isActive {
 			updates["status"] = models.KeyStatusActive
+		}
+
+		if statusCode > 0 {
+			updates["last_validation_status"] = statusCode
+			updates["last_validation_response"] = responseBody
 		}
 
 		if err := tx.Model(&key).Updates(updates).Error; err != nil {
@@ -185,13 +191,13 @@ func (p *KeyProvider) handleSuccess(keyID uint, keyHashKey, activeKeysListKey st
 	})
 }
 
-func (p *KeyProvider) handleFailure(apiKey *models.APIKey, group *models.Group, keyHashKey, activeKeysListKey string) error {
+func (p *KeyProvider) handleFailure(apiKey *models.APIKey, group *models.Group, keyHashKey, activeKeysListKey string, statusCode int, responseBody string) error {
 	keyDetails, err := p.store.HGetAll(keyHashKey)
 	if err != nil {
 		return fmt.Errorf("failed to get key details from store: %w", err)
 	}
 
-	if keyDetails["status"] == models.KeyStatusInvalid {
+	if keyDetails["status"] == models.KeyStatusInvalid && statusCode == 0 {
 		return nil
 	}
 
@@ -214,12 +220,23 @@ func (p *KeyProvider) handleFailure(apiKey *models.APIKey, group *models.Group, 
 			updates["status"] = models.KeyStatusInvalid
 		}
 
+		if statusCode > 0 {
+			updates["last_validation_status"] = statusCode
+			updates["last_validation_response"] = responseBody
+		}
+
 		if err := tx.Model(&key).Updates(updates).Error; err != nil {
 			return fmt.Errorf("failed to update key stats in DB: %w", err)
 		}
 
-		if _, err := p.store.HIncrBy(keyHashKey, "failure_count", 1); err != nil {
-			return fmt.Errorf("failed to increment failure count in store: %w", err)
+		if statusCode > 0 {
+			if err := p.store.HSet(keyHashKey, updates); err != nil {
+				return fmt.Errorf("failed to update key details in store: %w", err)
+			}
+		} else {
+			if _, err := p.store.HIncrBy(keyHashKey, "failure_count", 1); err != nil {
+				return fmt.Errorf("failed to increment failure count in store: %w", err)
+			}
 		}
 
 		if shouldBlacklist {
@@ -235,6 +252,7 @@ func (p *KeyProvider) handleFailure(apiKey *models.APIKey, group *models.Group, 
 		return nil
 	})
 }
+
 
 // LoadKeysFromDB 从数据库加载所有分组和密钥，并填充到 Store 中。
 func (p *KeyProvider) LoadKeysFromDB() error {
