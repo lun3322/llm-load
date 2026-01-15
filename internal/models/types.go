@@ -9,9 +9,11 @@ import (
 
 // Key状态
 const (
-	KeyStatusActive  = "active"
-	KeyStatusInvalid = "invalid"
+	KeyStatusActive     = "active"
+	KeyStatusInvalid    = "invalid"
+	KeyStatusDeprecated = "deprecated"
 )
+
 
 // SystemSetting 对应 system_settings 表
 type SystemSetting struct {

@@ -76,6 +76,15 @@ type ValidateGroupKeysRequest struct {
 	Status  string `json:"status,omitempty"`
 }
 
+// DeprecateKeysByFilterRequest defines the payload for deprecating keys based on filters.
+type DeprecateKeysByFilterRequest struct {
+	GroupID        uint   `json:"group_id" binding:"required"`
+	Status         string `json:"status,omitempty"`
+	KeyValue       string `json:"key_value,omitempty"`
+	ResponseFilter string `json:"response_filter,omitempty"`
+}
+
+
 // AddMultipleKeys handles creating new keys from a text block within a specific group.
 func (s *Server) AddMultipleKeys(c *gin.Context) {
 	var req KeyTextRequest
@@ -145,7 +154,7 @@ func (s *Server) ListKeysInGroup(c *gin.Context) {
 	}
 
 	statusFilter := c.Query("status")
-	if statusFilter != "" && statusFilter != models.KeyStatusActive && statusFilter != models.KeyStatusInvalid {
+	if statusFilter != "" && statusFilter != models.KeyStatusActive && statusFilter != models.KeyStatusInvalid && statusFilter != models.KeyStatusDeprecated {
 		response.ErrorI18nFromAPIError(c, app_errors.ErrValidation, "validation.invalid_status_filter")
 		return
 	}
@@ -156,7 +165,10 @@ func (s *Server) ListKeysInGroup(c *gin.Context) {
 		searchHash = s.EncryptionSvc.Hash(searchKeyword)
 	}
 
-	query := s.KeyService.ListKeysInGroupQuery(groupID, statusFilter, searchHash)
+	responseFilter := c.Query("response_filter")
+
+	query := s.KeyService.ListKeysInGroupQuery(groupID, statusFilter, searchHash, responseFilter)
+
 
 	var keys []models.APIKey
 	paginatedResult, err := response.Paginate(c, query, &keys)
@@ -408,6 +420,33 @@ func (s *Server) ClearAllKeys(c *gin.Context) {
 	response.SuccessI18n(c, "success.all_keys_cleared", nil, map[string]any{"count": rowsAffected})
 }
 
+// DeprecateKeysByFilter handles deprecating keys based on filter criteria.
+func (s *Server) DeprecateKeysByFilter(c *gin.Context) {
+	var req DeprecateKeysByFilterRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, app_errors.NewAPIError(app_errors.ErrInvalidJSON, err.Error()))
+		return
+	}
+
+	if _, ok := s.findGroupByID(c, req.GroupID); !ok {
+		return
+	}
+
+	searchHash := ""
+	if req.KeyValue != "" {
+		searchHash = s.EncryptionSvc.Hash(req.KeyValue)
+	}
+
+	rowsAffected, err := s.KeyService.DeprecateKeysByFilter(req.GroupID, req.Status, searchHash, req.ResponseFilter)
+	if err != nil {
+		response.Error(c, app_errors.ParseDBError(err))
+		return
+	}
+
+	response.Success(c, gin.H{"count": rowsAffected})
+}
+
+
 // ExportKeys handles exporting keys to a text file.
 func (s *Server) ExportKeys(c *gin.Context) {
 	groupID, ok := validateGroupIDFromQuery(c)
@@ -421,11 +460,12 @@ func (s *Server) ExportKeys(c *gin.Context) {
 	}
 
 	switch statusFilter {
-	case "all", models.KeyStatusActive, models.KeyStatusInvalid:
+	case "all", models.KeyStatusActive, models.KeyStatusInvalid, models.KeyStatusDeprecated:
 	default:
 		response.ErrorI18nFromAPIError(c, app_errors.ErrValidation, "validation.invalid_status_filter")
 		return
 	}
+
 
 	group, ok := s.findGroupByID(c, groupID)
 	if !ok {

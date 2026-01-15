@@ -290,7 +290,7 @@ func (s *KeyService) DeleteMultipleKeys(groupID uint, keysText string) (*DeleteK
 }
 
 // ListKeysInGroupQuery builds a query to list all keys within a specific group, filtered by status.
-func (s *KeyService) ListKeysInGroupQuery(groupID uint, statusFilter string, searchHash string) *gorm.DB {
+func (s *KeyService) ListKeysInGroupQuery(groupID uint, statusFilter string, searchHash string, responseFilter string) *gorm.DB {
 	query := s.DB.Model(&models.APIKey{}).Where("group_id = ?", groupID)
 
 	if statusFilter != "" {
@@ -301,10 +301,40 @@ func (s *KeyService) ListKeysInGroupQuery(groupID uint, statusFilter string, sea
 		query = query.Where("key_hash = ?", searchHash)
 	}
 
+	if responseFilter != "" {
+		query = query.Where("last_validation_response LIKE ?", "%"+responseFilter+"%")
+	}
+
 	query = query.Order("last_used_at desc, updated_at desc")
 
 	return query
 }
+
+// DeprecateKeysByFilter updates matching keys to 'deprecated' status.
+func (s *KeyService) DeprecateKeysByFilter(groupID uint, statusFilter string, searchHash string, responseFilter string) (int64, error) {
+	query := s.ListKeysInGroupQuery(groupID, statusFilter, searchHash, responseFilter)
+
+	var keyIDs []uint
+	if err := query.Pluck("id", &keyIDs).Error; err != nil {
+		return 0, err
+	}
+
+	if len(keyIDs) == 0 {
+		return 0, nil
+	}
+
+	result := s.DB.Model(&models.APIKey{}).Where("id IN ?", keyIDs).Update("status", models.KeyStatusDeprecated)
+	if result.Error != nil {
+		return 0, result.Error
+	}
+
+	if err := s.KeyProvider.RemoveKeysFromStore(groupID, keyIDs); err != nil {
+		logrus.WithError(err).WithField("groupID", groupID).Error("Failed to remove deprecated keys from store")
+	}
+
+	return result.RowsAffected, nil
+}
+
 
 // TestMultipleKeys handles a one-off validation test for multiple keys.
 func (s *KeyService) TestMultipleKeys(group *models.Group, keysText string) ([]keypool.KeyTestResult, error) {
@@ -338,9 +368,10 @@ func (s *KeyService) StreamKeysToWriter(groupID uint, statusFilter string, write
 	query := s.DB.Model(&models.APIKey{}).Where("group_id = ?", groupID).Select("id, key_value")
 
 	switch statusFilter {
-	case models.KeyStatusActive, models.KeyStatusInvalid:
+	case models.KeyStatusActive, models.KeyStatusInvalid, models.KeyStatusDeprecated:
 		query = query.Where("status = ?", statusFilter)
 	case "all":
+
 	default:
 		return fmt.Errorf("invalid status filter: %s", statusFilter)
 	}
