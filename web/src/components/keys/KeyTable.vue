@@ -49,6 +49,7 @@ const keys = ref<KeyRow[]>([]);
 const loading = ref(false);
 const searchText = ref("");
 const statusFilter = ref<"all" | "active" | "invalid">("all");
+const responseFilter = ref("");
 const currentPage = ref(1);
 const pageSize = ref(12);
 const total = ref(0);
@@ -203,6 +204,7 @@ async function loadKeys() {
       page_size: pageSize.value,
       status: statusFilter.value === "all" ? undefined : (statusFilter.value as KeyStatus),
       key_value: searchText.value.trim() || undefined,
+      response_filter: responseFilter.value.trim() || undefined,
     });
     keys.value = result.items as KeyRow[];
     total.value = result.pagination.total_items;
@@ -413,6 +415,17 @@ function formatRelativeTime(date: string) {
     return t("keys.secondsAgo", { seconds: diffSeconds });
   }
   return t("keys.justNow");
+}
+
+function truncateResponse(response: string): string {
+  if (!response) {
+    return "";
+  }
+  const maxLength = 30;
+  if (response.length <= maxLength) {
+    return response;
+  }
+  return response.substring(0, maxLength) + "...";
 }
 
 function getStatusClass(status: KeyStatus): string {
@@ -638,7 +651,7 @@ function resetPage() {
           {{ t("keys.deleteKey") }}
         </n-button>
       </div>
-      <div class="toolbar-right">
+<div class="toolbar-right">
         <n-space :size="12" align="center">
           <n-select
             v-model:value="statusFilter"
@@ -670,6 +683,14 @@ function resetPage() {
               {{ t("common.search") }}
             </n-button>
           </n-input-group>
+          <n-input
+            v-model:value="responseFilter"
+            :placeholder="t('keys.responseFilterPlaceholder')"
+            size="small"
+            style="width: 180px"
+            clearable
+            @keyup.enter="handleSearchInput"
+          />
           <n-dropdown :options="moreOptions" trigger="click" @select="handleMoreAction">
             <n-button size="small" tertiary>
               <template #icon>
@@ -740,7 +761,7 @@ function resetPage() {
               </div>
             </div>
 
-            <!-- 统计信息 + 操作按钮行 -->
+<!-- 统计信息 + 操作按钮行 -->
             <div class="key-bottom">
               <div class="key-stats">
                 <span class="stat-item">
@@ -787,6 +808,14 @@ function resetPage() {
                   {{ t("common.deleteShort") }}
                 </n-button>
               </n-button-group>
+            </div>
+
+            <!-- 最后响应信息行 -->
+            <div v-if="key.last_validation_response" class="key-response-row">
+              <span class="response-label">{{ t("keys.lastResponse") }}:</span>
+              <span class="response-text" :title="key.last_validation_response">
+                {{ truncateResponse(key.last_validation_response) }}
+              </span>
             </div>
           </div>
         </div>
@@ -1112,6 +1141,32 @@ function resetPage() {
 .stat-item strong {
   color: var(--text-primary);
   font-weight: 600;
+}
+
+/* 最后响应信息行 */
+.key-response-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  padding: 6px 0;
+  border-top: 1px solid var(--border-color);
+  margin-top: 4px;
+}
+
+.response-label {
+  color: var(--text-secondary);
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.response-text {
+  color: var(--error-color);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
 }
 
 .key-actions {

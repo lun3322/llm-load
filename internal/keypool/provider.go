@@ -11,6 +11,7 @@ import (
 	"math/rand"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -22,15 +23,27 @@ type KeyProvider struct {
 	store           store.Store
 	settingsManager *config.SystemSettingsManager
 	encryptionSvc   encryption.Service
+	updateMutex     sync.Mutex  // 仅用于 SQLite 的写入互斥
+	isSQLite        bool        // 标记是否为 SQLite 数据库
 }
 
 // NewProvider 创建一个新的 KeyProvider 实例。
 func NewProvider(db *gorm.DB, store store.Store, settingsManager *config.SystemSettingsManager, encryptionSvc encryption.Service) *KeyProvider {
+	// 判断数据库类型
+	isSQLite := db.Dialector.Name() == "sqlite"
+
+	if isSQLite {
+		logrus.Info("Detected SQLite database, enabling write mutex for UpdateStatus")
+	} else {
+		logrus.Infof("Detected %s database, concurrent writes enabled", db.Dialector.Name())
+	}
+
 	return &KeyProvider{
 		db:              db,
 		store:           store,
 		settingsManager: settingsManager,
 		encryptionSvc:   encryptionSvc,
+		isSQLite:        isSQLite,
 	}
 }
 
@@ -90,6 +103,12 @@ func (p *KeyProvider) SelectKey(groupID uint) (*models.APIKey, error) {
 // UpdateStatus 异步地提交一个 Key 状态更新任务。
 func (p *KeyProvider) UpdateStatus(apiKey *models.APIKey, group *models.Group, isSuccess bool, errorMessage string, statusCode int, responseBody string) {
 	go func() {
+		// 仅在 SQLite 时加锁，避免数据库锁定问题
+		if p.isSQLite {
+			p.updateMutex.Lock()
+			defer p.updateMutex.Unlock()
+		}
+
 		keyHashKey := fmt.Sprintf("key:%d", apiKey.ID)
 		activeKeysListKey := fmt.Sprintf("group:%d:active_keys", group.ID)
 
@@ -114,7 +133,14 @@ func (p *KeyProvider) UpdateStatus(apiKey *models.APIKey, group *models.Group, i
 
 
 // executeTransactionWithRetry wraps a database transaction with a retry mechanism.
+// 注意：SQLite 时已经在 UpdateStatus 外层加锁，这里主要处理其他数据库的并发冲突
 func (p *KeyProvider) executeTransactionWithRetry(operation func(tx *gorm.DB) error) error {
+	// SQLite 时已经外层加锁，不需要重试
+	if p.isSQLite {
+		return p.db.Transaction(operation)
+	}
+
+	// MySQL/PostgreSQL 可能遇到死锁，保留重试逻辑
 	const maxRetries = 3
 	const baseDelay = 50 * time.Millisecond
 	const maxJitter = 150 * time.Millisecond
@@ -126,10 +152,11 @@ func (p *KeyProvider) executeTransactionWithRetry(operation func(tx *gorm.DB) er
 			return nil
 		}
 
-		if strings.Contains(err.Error(), "database is locked") {
+		// 检查是否为可重试的错误
+		if p.isRetryableError(err) {
 			jitter := time.Duration(rand.Intn(int(maxJitter)))
 			totalDelay := baseDelay + jitter
-			logrus.Debugf("Database is locked, retrying in %v... (attempt %d/%d)", totalDelay, i+1, maxRetries)
+			logrus.Debugf("Database conflict detected, retrying in %v... (attempt %d/%d)", totalDelay, i+1, maxRetries)
 			time.Sleep(totalDelay)
 			continue
 		}
@@ -138,6 +165,32 @@ func (p *KeyProvider) executeTransactionWithRetry(operation func(tx *gorm.DB) er
 	}
 
 	return err
+}
+
+// isRetryableError 判断错误是否可重试
+func (p *KeyProvider) isRetryableError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errStr := strings.ToLower(err.Error())
+
+	// SQLite 锁定错误（虽然 SQLite 时已经加锁，但保留此判断以防万一）
+	if strings.Contains(errStr, "database is locked") {
+		return true
+	}
+
+	// MySQL 死锁错误
+	if strings.Contains(errStr, "deadlock") {
+		return true
+	}
+
+	// PostgreSQL 序列化失败
+	if strings.Contains(errStr, "could not serialize") {
+		return true
+	}
+
+	return false
 }
 
 func (p *KeyProvider) handleSuccess(keyID uint, keyHashKey, activeKeysListKey string, statusCode int, responseBody string) error {

@@ -67,13 +67,14 @@ export const keysApi = {
     return res.data || [];
   },
 
-  // 获取分组的密钥列表
+// 获取分组的密钥列表
   async getGroupKeys(params: {
     group_id: number;
     page: number;
     page_size: number;
     key_value?: string;
     status?: KeyStatus;
+    response_filter?: string;
   }): Promise<{
     items: APIKey[];
     pagination: {
