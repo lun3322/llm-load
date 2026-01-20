@@ -48,7 +48,7 @@ const props = defineProps<Props>();
 const keys = ref<KeyRow[]>([]);
 const loading = ref(false);
 const searchText = ref("");
-const statusFilter = ref<"all" | "active" | "invalid">("all");
+const statusFilter = ref<"all" | "active" | "invalid" | "deprecated">("all");
 const responseFilter = ref("");
 const currentPage = ref(1);
 const pageSize = ref(12);
@@ -62,6 +62,7 @@ const statusOptions = [
   { label: t("common.all"), value: "all" },
   { label: t("keys.valid"), value: "active" },
   { label: t("keys.invalid"), value: "invalid" },
+  { label: t("keys.deprecated"), value: "deprecated" },
 ];
 
 // 更多操作下拉菜单选项
@@ -71,6 +72,7 @@ const moreOptions = [
   { label: t("keys.exportInvalidKeys"), key: "copyInvalid" },
   { type: "divider" },
   { label: t("keys.restoreAllInvalidKeys"), key: "restoreAll" },
+  { label: t("keys.deprecateByFilter"), key: "deprecateByFilter" },
   {
     label: t("keys.clearAllInvalidKeys"),
     key: "clearInvalid",
@@ -172,6 +174,9 @@ function handleMoreAction(key: string) {
       break;
     case "restoreAll":
       restoreAllInvalid();
+      break;
+    case "deprecateByFilter":
+      deprecateByFilter();
       break;
     case "validateAll":
       validateKeys("all");
@@ -425,7 +430,7 @@ function truncateResponse(response: string): string {
   if (response.length <= maxLength) {
     return response;
   }
-  return response.substring(0, maxLength) + "...";
+  return `${response.substring(0, maxLength)}...`;
 }
 
 function getStatusClass(status: KeyStatus): string {
@@ -434,6 +439,8 @@ function getStatusClass(status: KeyStatus): string {
       return "status-valid";
     case "invalid":
       return "status-invalid";
+    case "deprecated":
+      return "status-deprecated";
     default:
       return "status-unknown";
   }
@@ -521,6 +528,47 @@ async function validateKeys(status: "all" | "active" | "invalid") {
     testingMsg?.destroy();
     testingMsg = null;
   }
+}
+
+async function deprecateByFilter() {
+  if (!props.selectedGroup?.id || isDeling.value) {
+    return;
+  }
+
+  const d = dialog.warning({
+    title: t("keys.deprecateByFilter"),
+    content: t("keys.confirmDeprecateByFilter"),
+    positiveText: t("common.confirm"),
+    negativeText: t("common.cancel"),
+    onPositiveClick: async () => {
+      if (!props.selectedGroup?.id) {
+        return;
+      }
+
+      isDeling.value = true;
+      d.loading = true;
+      try {
+        const result = await keysApi.deprecateKeysByFilter({
+          group_id: props.selectedGroup.id,
+          status:
+            statusFilter.value === "all"
+              ? undefined
+              : (statusFilter.value as "active" | "invalid" | "deprecated"),
+          key_value: searchText.value.trim() || undefined,
+          response_filter: responseFilter.value.trim() || undefined,
+        });
+        window.$message.success(t("keys.clearSuccess", { count: result.count }));
+        await loadKeys();
+        // 触发同步操作刷新
+        triggerSyncOperationRefresh(props.selectedGroup.name, "DEPRECATE_BY_FILTER");
+      } catch (_error) {
+        console.error("Deprecate failed");
+      } finally {
+        d.loading = false;
+        isDeling.value = false;
+      }
+    },
+  });
 }
 
 async function clearAllInvalid() {
@@ -651,7 +699,7 @@ function resetPage() {
           {{ t("keys.deleteKey") }}
         </n-button>
       </div>
-<div class="toolbar-right">
+      <div class="toolbar-right">
         <n-space :size="12" align="center">
           <n-select
             v-model:value="statusFilter"
@@ -724,6 +772,17 @@ function resetPage() {
                   </template>
                   {{ t("keys.validShort") }}
                 </n-tag>
+                <n-tag
+                  v-else-if="key.status === 'deprecated'"
+                  type="warning"
+                  :bordered="false"
+                  round
+                >
+                  <template #icon>
+                    <n-icon :component="AlertCircleOutline" />
+                  </template>
+                  {{ t("keys.deprecatedShort") }}
+                </n-tag>
                 <n-tag v-else :bordered="false" round>
                   <template #icon>
                     <n-icon :component="AlertCircleOutline" />
@@ -761,7 +820,7 @@ function resetPage() {
               </div>
             </div>
 
-<!-- 统计信息 + 操作按钮行 -->
+            <!-- 统计信息 + 操作按钮行 -->
             <div class="key-bottom">
               <div class="key-stats">
                 <span class="stat-item">
@@ -788,7 +847,7 @@ function resetPage() {
                   {{ t("keys.testShort") }}
                 </n-button>
                 <n-button
-                  v-if="key.status !== 'active'"
+                  v-if="key.status === 'invalid'"
                   tertiary
                   size="tiny"
                   @click="restoreKey(key)"
@@ -1092,6 +1151,12 @@ function resetPage() {
   border-color: var(--invalid-border);
   background: var(--card-bg-solid);
   opacity: 0.85;
+}
+
+.key-card.status-deprecated {
+  border-color: var(--warning-border);
+  background: var(--warning-bg);
+  opacity: 0.9;
 }
 
 .key-card.status-error {

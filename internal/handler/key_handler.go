@@ -332,7 +332,7 @@ func (s *Server) ValidateGroupKeys(c *gin.Context) {
 	}
 
 	// Validate status if provided
-	if req.Status != "" && req.Status != models.KeyStatusActive && req.Status != models.KeyStatusInvalid {
+	if req.Status != "" && req.Status != models.KeyStatusActive && req.Status != models.KeyStatusInvalid && req.Status != models.KeyStatusDeprecated {
 		response.ErrorI18nFromAPIError(c, app_errors.ErrValidation, "validation.invalid_status_value")
 		return
 	}

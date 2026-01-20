@@ -239,7 +239,7 @@ export const keysApi = {
   // 验证分组密钥
   async validateGroupKeys(
     groupId: number,
-    status?: "active" | "invalid"
+    status?: "active" | "invalid" | "deprecated"
   ): Promise<{
     is_running: boolean;
     group_name: string;
@@ -252,6 +252,17 @@ export const keysApi = {
       payload.status = status;
     }
     const res = await http.post("/keys/validate-group", payload);
+    return res.data;
+  },
+
+  // 批量弃用密钥
+  async deprecateKeysByFilter(params: {
+    group_id: number;
+    status?: "active" | "invalid" | "deprecated";
+    key_value?: string;
+    response_filter?: string;
+  }): Promise<{ count: number }> {
+    const res = await http.post("/keys/deprecate-by-filter", params);
     return res.data;
   },
 
