@@ -144,8 +144,8 @@ func (s *Server) ListKeysInGroup(c *gin.Context) {
 		return
 	}
 
-	statusFilter := c.Query("status")
-	if statusFilter != "" && statusFilter != models.KeyStatusActive && statusFilter != models.KeyStatusInvalid {
+statusFilter := c.Query("status")
+	if statusFilter != "" && statusFilter != models.KeyStatusActive && statusFilter != models.KeyStatusInvalid && statusFilter != models.KeyStatusDeprecated {
 		response.ErrorI18nFromAPIError(c, app_errors.ErrValidation, "validation.invalid_status_filter")
 		return
 	}
@@ -319,8 +319,8 @@ func (s *Server) ValidateGroupKeys(c *gin.Context) {
 		return
 	}
 
-	// Validate status if provided
-	if req.Status != "" && req.Status != models.KeyStatusActive && req.Status != models.KeyStatusInvalid {
+// Validate status if provided
+	if req.Status != "" && req.Status != models.KeyStatusActive && req.Status != models.KeyStatusInvalid && req.Status != models.KeyStatusDeprecated {
 		response.ErrorI18nFromAPIError(c, app_errors.ErrValidation, "validation.invalid_status_value")
 		return
 	}
@@ -446,6 +446,13 @@ type UpdateKeyNotesRequest struct {
 	Notes string `json:"notes"`
 }
 
+// BatchUpdateKeyStatusRequest defines the payload for batch updating key status.
+type BatchUpdateKeyStatusRequest struct {
+	GroupID                uint   `json:"group_id" binding:"required"`
+	LastValidationResponse string `json:"last_validation_response" binding:"required"`
+	NewStatus              string `json:"new_status" binding:"required"`
+}
+
 // UpdateKeyNotes handles updating the notes of a specific API key.
 func (s *Server) UpdateKeyNotes(c *gin.Context) {
 	keyIDStr := c.Param("id")
@@ -485,5 +492,38 @@ func (s *Server) UpdateKeyNotes(c *gin.Context) {
 		return
 	}
 
-	response.Success(c, nil)
+response.Success(c, nil)
+}
+
+// BatchUpdateKeyStatus 批量更新密钥状态
+func (s *Server) BatchUpdateKeyStatus(c *gin.Context) {
+	var req BatchUpdateKeyStatusRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, app_errors.NewAPIError(app_errors.ErrInvalidJSON, err.Error()))
+		return
+	}
+
+	if req.NewStatus != models.KeyStatusDeprecated {
+		response.Error(c, app_errors.NewAPIError(app_errors.ErrValidation, "invalid status, only deprecated is supported"))
+		return
+	}
+
+	if _, ok := s.findGroupByID(c, req.GroupID); !ok {
+		return
+	}
+
+	result := s.DB.Model(&models.APIKey{}).
+		Where("group_id = ? AND last_validation_response LIKE ?", req.GroupID, "%"+req.LastValidationResponse+"%").
+		Updates(map[string]any{
+			"status": req.NewStatus,
+		})
+
+	if result.Error != nil {
+		response.Error(c, app_errors.ParseDBError(result.Error))
+		return
+	}
+
+	response.Success(c, gin.H{
+		"affected_rows": result.RowsAffected,
+	})
 }

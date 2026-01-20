@@ -94,7 +94,7 @@ func (p *KeyProvider) UpdateStatus(apiKey *models.APIKey, group *models.Group, i
 		activeKeysListKey := fmt.Sprintf("group:%d:active_keys", group.ID)
 
 		if isSuccess {
-			if err := p.handleSuccess(apiKey.ID, keyHashKey, activeKeysListKey); err != nil {
+			if err := p.handleSuccess(apiKey.ID, keyHashKey, activeKeysListKey, errorMessage); err != nil {
 				logrus.WithFields(logrus.Fields{"keyID": apiKey.ID, "error": err}).Error("Failed to handle key success")
 			}
 		} else {
@@ -104,7 +104,7 @@ func (p *KeyProvider) UpdateStatus(apiKey *models.APIKey, group *models.Group, i
 					"error": errorMessage,
 				}).Debug("Uncounted error, skipping failure handling")
 			} else {
-				if err := p.handleFailure(apiKey, group, keyHashKey, activeKeysListKey); err != nil {
+				if err := p.handleFailure(apiKey, group, keyHashKey, activeKeysListKey, errorMessage); err != nil {
 					logrus.WithFields(logrus.Fields{"keyID": apiKey.ID, "error": err}).Error("Failed to handle key failure")
 				}
 			}
@@ -139,7 +139,7 @@ func (p *KeyProvider) executeTransactionWithRetry(operation func(tx *gorm.DB) er
 	return err
 }
 
-func (p *KeyProvider) handleSuccess(keyID uint, keyHashKey, activeKeysListKey string) error {
+func (p *KeyProvider) handleSuccess(keyID uint, keyHashKey, activeKeysListKey string, errorMessage string) error {
 	keyDetails, err := p.store.HGetAll(keyHashKey)
 	if err != nil {
 		return fmt.Errorf("failed to get key details from store: %w", err)
@@ -158,7 +158,10 @@ func (p *KeyProvider) handleSuccess(keyID uint, keyHashKey, activeKeysListKey st
 			return fmt.Errorf("failed to lock key %d for update: %w", keyID, err)
 		}
 
-		updates := map[string]any{"failure_count": 0}
+		updates := map[string]any{
+			"failure_count":             0,
+			"last_validation_response": "",
+		}
 		if !isActive {
 			updates["status"] = models.KeyStatusActive
 		}
@@ -185,19 +188,18 @@ func (p *KeyProvider) handleSuccess(keyID uint, keyHashKey, activeKeysListKey st
 	})
 }
 
-func (p *KeyProvider) handleFailure(apiKey *models.APIKey, group *models.Group, keyHashKey, activeKeysListKey string) error {
+func (p *KeyProvider) handleFailure(apiKey *models.APIKey, group *models.Group, keyHashKey, activeKeysListKey string, errorMessage string) error {
 	keyDetails, err := p.store.HGetAll(keyHashKey)
 	if err != nil {
 		return fmt.Errorf("failed to get key details from store: %w", err)
 	}
 
-	if keyDetails["status"] == models.KeyStatusInvalid {
+	if keyDetails["status"] == models.KeyStatusInvalid || keyDetails["status"] == models.KeyStatusDeprecated {
 		return nil
 	}
 
 	failureCount, _ := strconv.ParseInt(keyDetails["failure_count"], 10, 64)
 
-	// 获取该分组的有效配置
 	blacklistThreshold := group.EffectiveConfig.BlacklistThreshold
 
 	return p.executeTransactionWithRetry(func(tx *gorm.DB) error {
@@ -208,7 +210,10 @@ func (p *KeyProvider) handleFailure(apiKey *models.APIKey, group *models.Group, 
 
 		newFailureCount := failureCount + 1
 
-		updates := map[string]any{"failure_count": newFailureCount}
+		updates := map[string]any{
+			"failure_count":             newFailureCount,
+			"last_validation_response": errorMessage,
+		}
 		shouldBlacklist := blacklistThreshold > 0 && newFailureCount >= int64(blacklistThreshold)
 		if shouldBlacklist {
 			updates["status"] = models.KeyStatusInvalid

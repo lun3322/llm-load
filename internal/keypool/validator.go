@@ -69,6 +69,7 @@ func (s *KeyValidator) ValidateSingleKey(key *models.APIKey, group *models.Group
 	if !isValid && validationErr != nil {
 		errorMsg = validationErr.Error()
 	}
+
 	s.keypoolProvider.UpdateStatus(key, group, isValid, errorMsg)
 
 	if !isValid {

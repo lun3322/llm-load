@@ -254,9 +254,19 @@ export const keysApi = {
     return res.data;
   },
 
-  // 获取任务状态
+// 获取任务状态
   async getTaskStatus(): Promise<TaskInfo> {
     const res = await http.get("/tasks/status");
+    return res.data;
+  },
+
+  // 批量更新密钥状态
+  async batchUpdateKeyStatus(params: {
+    group_id: number;
+    last_validation_response: string;
+    new_status: string;
+  }): Promise<{ affected_rows: number }> {
+    const res = await http.post("/keys/batch-update-status", params);
     return res.data;
   },
 

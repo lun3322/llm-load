@@ -125,7 +125,7 @@ func registerProtectedAPIRoutes(api *gin.RouterGroup, serverHandler *handler.Ser
 		groups.GET("/:id/parent-aggregate-groups", serverHandler.GetParentAggregateGroups)
 	}
 
-	// Key Management Routes
+// Key Management Routes
 	keys := api.Group("/keys")
 	{
 		keys.GET("", serverHandler.ListKeysInGroup)
@@ -141,6 +141,7 @@ func registerProtectedAPIRoutes(api *gin.RouterGroup, serverHandler *handler.Ser
 		keys.POST("/validate-group", serverHandler.ValidateGroupKeys)
 		keys.POST("/test-multiple", serverHandler.TestMultipleKeys)
 		keys.PUT("/:id/notes", serverHandler.UpdateKeyNotes)
+		keys.POST("/batch-update-status", serverHandler.BatchUpdateKeyStatus)
 	}
 
 	// Tasks

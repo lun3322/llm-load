@@ -14,6 +14,7 @@ import {
   Pencil,
   RemoveCircleOutline,
   Search,
+  SettingsOutline,
 } from "@vicons/ionicons5";
 import {
   NButton,
@@ -32,6 +33,7 @@ import { h, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import KeyCreateDialog from "./KeyCreateDialog.vue";
 import KeyDeleteDialog from "./KeyDeleteDialog.vue";
+import KeyManageDialog from "./KeyManageDialog.vue";
 
 const { t } = useI18n();
 
@@ -92,6 +94,7 @@ const isRestoring = ref(false);
 
 const createDialogShow = ref(false);
 const deleteDialogShow = ref(false);
+const manageDialogShow = ref(false);
 
 // 备注编辑相关
 const notesDialogShow = ref(false);
@@ -624,7 +627,7 @@ function resetPage() {
   <div class="key-table-container">
     <!-- 工具栏 -->
     <div class="toolbar">
-      <div class="toolbar-left">
+<div class="toolbar-left">
         <n-button type="success" size="small" @click="createDialogShow = true">
           <template #icon>
             <n-icon :component="AddCircleOutline" />
@@ -636,6 +639,12 @@ function resetPage() {
             <n-icon :component="RemoveCircleOutline" />
           </template>
           {{ t("keys.deleteKey") }}
+        </n-button>
+        <n-button type="info" size="small" @click="manageDialogShow = true">
+          <template #icon>
+            <n-icon :component="SettingsOutline" />
+          </template>
+          {{ t("keys.manageKeys") }}
         </n-button>
       </div>
       <div class="toolbar-right">
@@ -835,12 +844,18 @@ function resetPage() {
       @success="loadKeys"
     />
 
-    <key-delete-dialog
+<key-delete-dialog
       v-if="selectedGroup?.id"
       v-model:show="deleteDialogShow"
       :group-id="selectedGroup.id"
       :group-name="getGroupDisplayName(selectedGroup!)"
       @success="handleBatchDeleteSuccess"
+    />
+    <key-manage-dialog
+      v-if="selectedGroup?.id"
+      v-model:show="manageDialogShow"
+      :group="selectedGroup"
+      @refresh="loadKeys"
     />
   </div>
 

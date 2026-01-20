@@ -6,7 +6,7 @@ export interface ApiResponse<T> {
 }
 
 // 密钥状态
-export type KeyStatus = "active" | "invalid" | undefined;
+export type KeyStatus = "active" | "invalid" | "deprecated" | undefined;
 
 // 分组类型
 export type GroupType = "standard" | "aggregate";
@@ -24,6 +24,7 @@ export interface APIKey {
   request_count: number;
   failure_count: number;
   last_used_at?: string;
+  last_validation_response?: string;
   created_at: string;
   updated_at: string;
 }
