@@ -208,8 +208,8 @@ export const keysApi = {
     );
   },
 
-  // 导出密钥
-  exportKeys(groupId: number, status: "all" | "active" | "invalid" = "all"): void {
+// 导出密钥
+  exportKeys(groupId: number, status: "all" | "active" | "invalid" | "deprecated" = "all"): void {
     const authKey = localStorage.getItem("authKey");
     if (!authKey) {
       window.$message.error(i18n.global.t("auth.noAuthKeyFound"));
@@ -235,10 +235,10 @@ export const keysApi = {
     document.body.removeChild(link);
   },
 
-  // 验证分组密钥
+// 验证分组密钥
   async validateGroupKeys(
     groupId: number,
-    status?: "active" | "invalid"
+    status?: "active" | "invalid" | "deprecated"
   ): Promise<{
     is_running: boolean;
     group_name: string;

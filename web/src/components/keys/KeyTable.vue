@@ -15,6 +15,7 @@ import {
   RemoveCircleOutline,
   Search,
   SettingsOutline,
+  WarningOutline,
 } from "@vicons/ionicons5";
 import {
   NButton,
@@ -50,7 +51,7 @@ const props = defineProps<Props>();
 const keys = ref<KeyRow[]>([]);
 const loading = ref(false);
 const searchText = ref("");
-const statusFilter = ref<"all" | "active" | "invalid">("all");
+const statusFilter = ref<"all" | "active" | "invalid" | "deprecated">("all");
 const currentPage = ref(1);
 const pageSize = ref(12);
 const total = ref(0);
@@ -60,9 +61,10 @@ const confirmInput = ref("");
 
 // 状态过滤选项
 const statusOptions = [
-  { label: t("common.all"), value: "all" },
+  { label: t("keys.all"), value: "all" },
   { label: t("keys.valid"), value: "active" },
   { label: t("keys.invalid"), value: "invalid" },
+  { label: t("keys.deprecated"), value: "deprecated" },
 ];
 
 // 更多操作下拉菜单选项
@@ -70,6 +72,7 @@ const moreOptions = [
   { label: t("keys.exportAllKeys"), key: "copyAll" },
   { label: t("keys.exportValidKeys"), key: "copyValid" },
   { label: t("keys.exportInvalidKeys"), key: "copyInvalid" },
+  { label: t("keys.exportDeprecatedKeys"), key: "copyDeprecated" },
   { type: "divider" },
   { label: t("keys.restoreAllInvalidKeys"), key: "restoreAll" },
   {
@@ -86,6 +89,7 @@ const moreOptions = [
   { label: t("keys.validateAllKeys"), key: "validateAll" },
   { label: t("keys.validateValidKeys"), key: "validateActive" },
   { label: t("keys.validateInvalidKeys"), key: "validateInvalid" },
+  { label: t("keys.validateDeprecatedKeys"), key: "validateDeprecated" },
 ];
 
 let testingMsg: MessageReactive | null = null;
@@ -172,6 +176,9 @@ function handleMoreAction(key: string) {
     case "copyInvalid":
       copyInvalidKeys();
       break;
+    case "copyDeprecated":
+      copyDeprecatedKeys();
+      break;
     case "restoreAll":
       restoreAllInvalid();
       break;
@@ -183,6 +190,9 @@ function handleMoreAction(key: string) {
       break;
     case "validateInvalid":
       validateKeys("invalid");
+      break;
+    case "validateDeprecated":
+      validateKeys("deprecated");
       break;
     case "clearInvalid":
       clearAllInvalid();
@@ -424,6 +434,8 @@ function getStatusClass(status: KeyStatus): string {
       return "status-valid";
     case "invalid":
       return "status-invalid";
+    case "deprecated":
+      return "status-deprecated";
     default:
       return "status-unknown";
   }
@@ -451,6 +463,14 @@ async function copyInvalidKeys() {
   }
 
   keysApi.exportKeys(props.selectedGroup.id, "invalid");
+}
+
+async function copyDeprecatedKeys() {
+  if (!props.selectedGroup?.id) {
+    return;
+  }
+
+  keysApi.exportKeys(props.selectedGroup.id, "deprecated");
 }
 
 async function restoreAllInvalid() {
@@ -485,16 +505,18 @@ async function restoreAllInvalid() {
   });
 }
 
-async function validateKeys(status: "all" | "active" | "invalid") {
+async function validateKeys(status: "all" | "active" | "invalid" | "deprecated") {
   if (!props.selectedGroup?.id || testingMsg) {
     return;
   }
 
-  let statusText = t("common.all");
+  let statusText = t("keys.all");
   if (status === "active") {
     statusText = t("keys.valid");
   } else if (status === "invalid") {
     statusText = t("keys.invalid");
+  } else if (status === "deprecated") {
+    statusText = t("keys.deprecated");
   }
 
   testingMsg = window.$message.info(t("keys.validatingKeysMsg", { type: statusText }), {
@@ -703,7 +725,7 @@ function resetPage() {
             class="key-card"
             :class="getStatusClass(key.status)"
           >
-            <!-- 主要信息行：Key + 快速操作 -->
+<!-- 主要信息行：Key + 快速操作 -->
             <div class="key-main">
               <div class="key-section">
                 <n-tag v-if="key.status === 'active'" type="success" :bordered="false" round>
@@ -711,6 +733,12 @@ function resetPage() {
                     <n-icon :component="CheckmarkCircle" />
                   </template>
                   {{ t("keys.validShort") }}
+                </n-tag>
+                <n-tag v-else-if="key.status === 'deprecated'" type="warning" :bordered="false" round>
+                  <template #icon>
+                    <n-icon :component="WarningOutline" />
+                  </template>
+                  {{ t("keys.deprecated") }}
                 </n-tag>
                 <n-tag v-else :bordered="false" round>
                   <template #icon>
@@ -1078,6 +1106,12 @@ function resetPage() {
   border-color: var(--invalid-border);
   background: var(--card-bg-solid);
   opacity: 0.85;
+}
+
+.key-card.status-deprecated {
+  border-color: #f5a623;
+  background: #fff8e6;
+  opacity: 0.9;
 }
 
 .key-card.status-error {
